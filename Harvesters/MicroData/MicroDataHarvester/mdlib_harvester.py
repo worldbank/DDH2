@@ -10,15 +10,13 @@ import pandas as pd
 import json
 import os, sys
 import re
+import ddh2
 
 ## Function that reads in all microdata and checks it against current DDH entry
 ## Make an API call to check if dataset ID from MDLib exists as harvester ID on DDH
 ## Sample query: https://ddhoutboundapiqa.asestg.worldbank.org/DDHSearch?qname=Dataset&qterm=*&$filter=reference_system/reference_id eq 'LKA_2005_SLMS_v01_M'
 
 global config_params
-
-
-
 
 
 def get_mdlib_ids(response):
@@ -38,9 +36,17 @@ def get_mdlib_ids(response):
     
 
 def main():
-    global limit
+    global limit, token
+    
+    with open("config_params") as f:
+        ddh2_params = json.load(f)
+    
+    ddh = ddh2.create_session(cache=True, params = params)
+    token = ddh.headers
+    
     limit = 10000
-    mdlib_url = "http://microdatalib.worldbank.org/index.php/api/catalog/search?format=json&ps={}".format(limit)
+    mdlib_params = get_params("microdata")
+    mdlib_url = "{}://{}/index.php/api/catalog/search?format=json&ps={}".format(mdlib_params['protocol'], mdlib_params['host'], limit)
     
     rr = requests.get(mdlib_url)
     
@@ -49,7 +55,7 @@ def main():
         
         if response['result']['total'] > limit :
             limit = resp['result']['total']
-            mdlib_url = "http://microdatalib.worldbank.org/index.php/api/catalog/search?format=json&ps={}".format(limit)    
+            mdlib_url = "{}://{}/index.php/api/catalog/search?format=json&ps={}".format(mdlib_params['protocol'], mdlib_params['host'], limit)    
             new_rr = requests.get(mdlib_url)
             
             list_ids = get_mdlib_ids(new_rr)
@@ -59,13 +65,15 @@ def main():
             
         
         ##Loop through the IDs and check if ID_no exists
+        ddh_params = get_params("ddh2")
         for ids in lis_ids:
-            req = requests.get("{}://{}/DDHSearch?qname=Dataset&qterm=*&$filter=reference_system/reference_id eq '{}'".format(ids))
+            req = requests.get("{}://{}/DDHSearch?qname=Dataset&qterm=*&$filter=reference_system/reference_id eq '{}'".format(ddh_params['protocol'], ddh_params['host'], ids))
             
             req_js = req.json()
             
             if len(req_js['Response']['value']) == 0: ##ID not on DDH
-                harvest_mdlib(ids)
+                md_data = get_microdata(config(get_params("microdata", ids)))
+                harvest_mdlib(ids, md_data, token)
             elif len(req_js['Response']['value']) == 1: ##ID on DDH. Check for update date
                 md_data = get_microdata(config(get_params(ids)))
                 md_date = md_data['dataset']['changed']
@@ -84,7 +92,7 @@ def main():
                 
                 try:
                     if md_date > ddh_date:
-                        harvest_mdlib(ids)
+                        harvest_mdlib(ids, md_data, token)
                     else:
                         sys.exit(99)
                 except TypeError:

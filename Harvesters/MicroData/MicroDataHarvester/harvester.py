@@ -2,6 +2,9 @@
 
 ### this will have reading mappings, creating a json object and pushing that object to DDH2 via API
 
+##Change classification
+##A global varibale for  response
+
 import urllib
 import requests
 import zipfile
@@ -147,10 +150,20 @@ def extract_ds_vals(lis, val):
         
     return temp
 
+def add_to_ddh(ds, token):
+    req = requests.post("https://ddhinboundapiuat.asestg.worldbank.org/dataset/create",
+                   json = ds_short, headers = token)
+    
+    if req.status_code == 417:
+        print("JSON invalid!")
+    elif req.status_code == 200:
+        print("Dataset Added! {}".format(req.text))
 
-def harvest_mdlib():
+
+
+def harvest_mdlib(ids, res, token):
     global response
-    response = get_microdata(config(get_params(ids)))
+    response = res
     
     funding_lis, notes_lis, stats_lis, study_lis, dcoll_lis, desc_lis = [], [], [], [], [], []
     ds = new_ds()
@@ -182,4 +195,5 @@ def harvest_mdlib():
         except TypeError as e:
             print(i, '::', e)
             
-    return ds
+    if ds:
+        add_to_ddh(ds, token)
