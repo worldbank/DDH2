@@ -151,8 +151,9 @@ def extract_ds_vals(lis, val):
     return temp
 
 def add_to_ddh(ds, token):
-    req = requests.post("https://ddhinboundapiuat.asestg.worldbank.org/dataset/create",
-                   json = ds_short, headers = token)
+    ddh_params = get_params("ddh2")
+    req = requests.post("{}://{}/dataset/create".format(ddh_params['protocol'], ddh_params['host']),
+                   json = ds, headers = token)
     
     if req.status_code == 417:
         print("JSON invalid!")

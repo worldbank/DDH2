@@ -41,7 +41,7 @@ def main():
     with open("config_params") as f:
         ddh2_params = json.load(f)
     
-    ddh = ddh2.create_session(cache=True, params = params)
+    ddh = ddh2.create_session(cache=True, params = ddh2_params)
     token = ddh.headers
     
     limit = 10000
