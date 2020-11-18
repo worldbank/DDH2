@@ -19,7 +19,7 @@ import pandas as pd
 import json
 import os, sys
 sys.path.append("../../../API/RomaniaHub/ddh2_testing")
-from ddh2 import dataset
+#from ddh2 import dataset
 import re
 sys.path.append("../../../API/pyddh")
 import ddh
@@ -69,7 +69,66 @@ def assign_poc(mdlib_poc):
           'is_emailaddress_visibility_externally': 'false'}
         return ds_poc
     
+
+def unpack_acks(vals):
+    temp = extract_md_meta(vals)
     
+    ack_lis = []
+    
+    for i in temp:
+        ack_lis.append(i['name']+', '+i['affiliation'])
+        
+    return ack_lis    
+
+
+def get_dates(lis, val):
+    if lis[-1] == "dates":
+        dtemp_ch = {"date" : extract_md_meta(['dataset', 'changed']),
+                "type" : "Modified Date"}
+        dtemp_cr = {"date" : extract_md_meta(['dataset', 'created']),
+                   "type" : "Release Date"}
+        return [dtemp_ch, dtemp_cr]
+    elif lis[-1] == "end_date":
+        temp = extract_md_meta(val+[0, 'end'])
+        return temp
+    elif lis[-1] == "start_date":
+        temp = extract_md_meta(val+[0, 'start'])
+        return temp
+    else:
+        return ''
+    
+    
+    
+def get_funding_abr(vals):
+    
+    for i in vals:
+        if i['name'] not in funding_lis:
+            funding_lis.append(i['name'])
+            
+
+            
+def get_list_vals(val):
+    if isinstance(val, list):
+        val = val[0]
+    return val['name']
+
+
+def str_to_dict(ds_item, key, val):
+    
+    if ds_item == "data_notes":
+        notes_lis.append({"{}".format(key) : "{}".format(val)})
+    elif ds_item == "statistical_concept_and_methodology":
+        stats_lis.append({"{}".format(key) : "{}".format(val)})
+    elif ds_item == "study_type":
+        study_lis.append({"{}".format(key) : "{}".format(val)})
+    elif ds_item == "data_collectors":
+        dcoll_lis.append({"{}".format(key) : "{}".format(val)})
+    elif ds_item == "description":
+        desc_lis.append({"{}".format(key) : "{}".format(val)})
+    else:
+        print("Key not found")
+        
+
 def get_keywords(kdic):
     key_lis = []
     for i in kdic:
@@ -113,42 +172,57 @@ def extract_ds_vals(lis, val):
         str_to_dict(lis[-1], val[-1],  extract_md_meta(val)[0]['name'])
         #temp = ds[lis[0]][lis[1]][lis[2]] + '\n ' +': '.join(["{}".format(val[-1]), extract_md_meta(val)[0]['name']])
         temp = dcoll_lis
+        return temp
     elif lis[-1] == "data_notes":
         str_to_dict(lis[-1], val[-1],  extract_md_meta(val))
         temp = notes_lis
+        return temp
     elif lis[-1] == "statistical_concept_and_methodology":
         str_to_dict(lis[-1], val[-1],  extract_md_meta(val))
         temp = stats_lis
+        return temp
     elif lis[-1] == "study_type":
         str_to_dict(lis[-1], val[-1],  extract_md_meta(val))
         temp = study_lis
+        return temp
     #else:
     #    temp = ds[lis[0]][lis[1]][lis[2]] + '\n ' +': '.join(["{}".format(val[-1]), extract_md_meta(val)])
     elif lis[-1] == "description" and lis[-2] == 'lineage':
         str_to_dict(lis[-1], val[-1],  extract_md_meta(val))
         temp = study_lis
+        return temp
         #temp = ds[lis[0]][lis[1]][lis[2]] + ': '.join(["{}".format(val[-1]), extract_md_meta(val)])
     elif lis[-1] == "funding_name_abbreviation_role":
         get_funding_abr(extract_md_meta(val))
         temp = funding_lis
+        return temp
     elif lis[-1] in ['end_date', 'start_date', 'dates']:
         temp = get_dates(lis, val)
+        return temp
     elif lis[-1] == 'keywords':
         temp = get_keywords(extract_md_meta(val))
+        return temp
     elif lis[-1] in ['coverage']:
         temp = extract_md_meta(val)[0]['name']
+        return temp
     elif lis[-1] == "useConstraints":
-        temp = extract_md_meta(val)[0]['txt']
+        try:
+            temp = extract_md_meta(val)[0]['txt']
+            return temp
+        except (ValueError, IndexError) as e:
+            pass
     elif lis[-1] == "other_acknowledgements":
         temp = unpack_acks(val)
+        return temp
     elif lis[-1] == "classification":
         temp = "OFFICIAL_USE_ONLY"
+        return temp
     elif lis[-1] == 'granularity':
         temp = extract_md_meta(val).split("\n")
+        return temp
     else:
         temp = extract_md_meta(val)
-        
-    return temp
+        return temp
 
 def add_to_ddh(ds, token):
     ddh_params = get_params("ddh2")
@@ -156,17 +230,22 @@ def add_to_ddh(ds, token):
                    json = ds, headers = token)
     
     if req.status_code == 417:
-        print("JSON invalid!")
+        print("Error: {}".format(req.text))
     elif req.status_code == 200:
         print("Dataset Added! {}".format(req.text))
 
-
+def _add_to_ddh(ids, ds):
+    with open("{}_MDLib.json".format(ids), 'w') as f:
+        json.dump(ds, f, indent = 6) 
 
 def harvest_mdlib(ids, res, token):
-    global response
+    global response, funding_lis, notes_lis, stats_lis, study_lis, dcoll_lis, desc_lis
     response = res
     
+    map_file = pd.read_excel(r"C:\Users\wb542830\OneDrive - WBG\DEC\DDH\DDH2.0\Harvesters\MicroData\MDLib_DDH2_mapping.xlsx", sheet_name=1)
+    
     funding_lis, notes_lis, stats_lis, study_lis, dcoll_lis, desc_lis = [], [], [], [], [], []
+    
     ds = new_ds()
     for i in map_file.index:
         try:
@@ -195,6 +274,13 @@ def harvest_mdlib(ids, res, token):
                 pass
         except TypeError as e:
             print(i, '::', e)
-            
-    if ds:
-        add_to_ddh(ds, token)
+    
+    with open("{}_MDLib.json".format(ids), 'w') as f:
+        json.dump(ds, f, indent = 6)
+    #if ds['title']:
+    #    _add_to_ddh(ids, ds)
+    #if ds:
+    #    #add_to_ddh(ds, token)
+    
+    #else:
+    #    print("Failed to add dataset!")
