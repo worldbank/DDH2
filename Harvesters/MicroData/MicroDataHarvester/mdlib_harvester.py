@@ -18,6 +18,10 @@ import ddh2
 ## Make an API call to check if dataset ID from MDLib exists as harvester ID on DDH
 ## Sample query: https://ddhoutboundapiqa.asestg.worldbank.org/DDHSearch?qname=Dataset&qterm=*&$filter=reference_system/reference_id eq 'LKA_2005_SLMS_v01_M'
 
+
+### OU Root: http://microdatalib.worldbank.org
+### Public Root: http://microdata.worldbank.org
+
 global config_params
 
 
@@ -40,6 +44,9 @@ def get_mdlib_ids(response):
 def main():
     global limit, token
     
+    ##Save a classification file before you start with harvesting
+    get_data_classfication()
+    
     with open("config_params") as f:
         ddh2_params = json.load(f)
     
@@ -54,7 +61,9 @@ def main():
     
     if rr.status_code == 200:
         resp = rr.json()
-
+        
+        ### Check if there are more observations than limit defined. If yes, change the limit and read-in all datasets
+        
         if resp['result']['total'] > limit :
             limit = resp['result']['total']
             mdlib_url = "{}://{}/index.php/api/catalog/search?format=json&ps={}".format(mdlib_params['protocol'], mdlib_params['host'], limit)    
@@ -70,6 +79,9 @@ def main():
         ddh_params = get_params("ddh2")
         timezone_nw = pytz.timezone('America/New_York')
         for ids in list_ids:
+            
+            ### this will return only public datasets on DDH currently. Work with ITS for new internal OU search endpoint
+            
             req = requests.get("{}://{}/DDHSearch?qname=Dataset&qterm=*&$filter=reference_system/reference_id eq '{}'".format(ddh_params['protocol'], ddh_params['host'], ids))
 
             req_js = req.json()

@@ -1,9 +1,13 @@
 #!/usr/bin/python
 
-### this will have reading mappings, creating a json object and pushing that object to DDH2 via API
-
-##Change classification
-##A global varibale for  response
+### this will read mappings, create a json object and push that object to DDH2 via API
+## TODO: 
+##      Create a function to compare two JSON objects and update the differences
+##      Add static information to JSON object before pushing it
+##      Add a function to add languages and ISO codes/coverage from country names
+##      Check how current harvester addresses data classification  -->> DONE
+##      Use controlled vocab endpoint wherever possible to avoid errors
+##      Add a function to add resource to published dataset (Rsource will be a link to dataset page on MDLib site) with a constant resource name
 
 import urllib
 import requests
@@ -32,6 +36,14 @@ def new_ds():
     with open(r"C:\Users\wb542830\OneDrive - WBG\DEC\DDH\DDH2.0\Testing\DDH_dataset_updated.json") as f:
         ds = json.load(f)
     return ds
+
+
+def clean_empty(d):
+    if not isinstance(d, (dict, list)):
+        return d
+    if isinstance(d, list):
+        return [v for v in (clean_empty(v) for v in d) if v]
+    return {k: v for k, v in ((k, clean_empty(v)) for k, v in d.items()) if v}
 
 
 def assign_poc(mdlib_poc):
@@ -214,9 +226,9 @@ def extract_ds_vals(lis, val):
     elif lis[-1] == "other_acknowledgements":
         temp = unpack_acks(val)
         return temp
-    elif lis[-1] == "classification":
-        temp = "OFFICIAL_USE_ONLY"
-        return temp
+    #elif lis[-1] == "classification":
+    #    temp = "OFFICIAL_USE_ONLY"
+    #    return temp
     elif lis[-1] == 'granularity':
         temp = extract_md_meta(val).split("\n")
         return temp
@@ -266,8 +278,8 @@ def harvest_mdlib(ids, res, token):
                 pass
         except AttributeError:
             if map_file['ddh2_fields'][i].split('>')[-1] == "classification":
-                lis = map_file['ddh2_fields'][i].split('>')
-                ds[lis[0]][lis[1]][lis[2]][lis[3]] = extract_ds_vals(lis, val)
+                cl = pd.read_csv(os.path.join(os.getcwd(), "MDLib_data_classification.csv"))
+                ds[lis[0]][lis[1]][lis[2]][lis[3]] = cl[cl.idno == ids]['classification'].iloc[0]
             elif map_file['ddh2_fields'][i].split('>')[-1] == "source_type":
                 ds[lis[0]][lis[1]][lis[2]] = "Microdata Library"
             else:    
@@ -275,6 +287,7 @@ def harvest_mdlib(ids, res, token):
         except TypeError as e:
             print(i, '::', e)
     
+    ds = clean_empty(ds)
     with open("{}_MDLib.json".format(ids), 'w') as f:
         json.dump(ds, f, indent = 6)
     #if ds['title']:

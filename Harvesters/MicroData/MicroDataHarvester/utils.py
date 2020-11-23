@@ -20,6 +20,13 @@ def get_params(host_type, idno=None):
             'data_id' : "{}".format(idno)
             }
         return config_params
+    if host_type == "microdata_pub":
+        config_params = {
+            'protocol' : 'https',
+            'host' : 'microdata.worldbank.org',
+            'data_id' : "{}".format(idno)
+            }
+        return config_params
     elif host_type == "ddh2":
         config_params = {
             'protocol' : 'https',
@@ -55,9 +62,76 @@ def get_microdata(url):
         return result
     except:
         raise ddh.APIError('get_microdata', url, response.text)
+
+
+def get_ou_class(token = None):
+
+    id_, idno_, title = [], [], []
+    
+    ou_req = requests.get("https://microdatalib.worldbank.org/index.php/api/catalog/search?&ps=20000&format=json")
+    
+    assert ou_req.status_code == 200, "Invalid MicrodataLib request call."
+    
+    ou_res = ou_req.json()['result']
+    
+    for i in ou_res['rows']:
+        id_.append(i['id'])
+        idno_.append(i['idno'])
+        title.append(i['title'])
+    
+    assert len(id_) == len(idno_) == len(title), "Lists must have same number of elements"
+    
+    df = pd.DataFrame(columns = ['id', 'idno', 'title', 'classification'])
+    df['id'] = id_
+    df['idno'] = idno_
+    df['title'] = title
+    df['classification'] = ['OFFICIAL_USE_ONLY' for i in range(len(id_))]
+    
+    return df
+
+def get_pub_class(token = None):
+
+    id_, idno_, title = [], [], []
+    
+    ou_req = requests.get("https://microdata.worldbank.org/index.php/api/catalog/search?&ps=20000&format=json")
+    
+    assert ou_req.status_code == 200, "Invalid Microdata request call."
+    
+    ou_res = ou_req.json()['result']
+    
+    for i in ou_res['rows']:
+        id_.append(i['id'])
+        idno_.append(i['idno'])
+        title.append(i['title'])
+    
+    assert len(id_) == len(idno_) == len(title), "Lists must have same number of elements"
+    
+    df = pd.DataFrame(columns = ['id', 'idno', 'title', 'classification'])
+    df['id'] = id_
+    df['idno'] = idno_
+    df['title'] = title
+    df['classification'] = ['PUBLIC' for i in range(len(id_))]
+    
+    return df
+
+def get_data_classfication():
+    ou_df = get_ou_class()
+    pub_df = get_pub_class()
+    
+    temp_df = ou_df[ou_df.idno.isin(pub_df.idno)]
+    
+    for i in temp_df.index:
+        ou_df.loc[i, 'classification'] = "PUBLIC"
+        
+    notin_pub = pub_df[~pub_df.idno.isin(ou_df.idno)]
+    
+    all_df = pd.concat([ou_df, notin_pub])
+    
+    all_df.to_csv(os.path.join(os.getcwd(), "MDLib_data_classification.csv"))
+    #return all_df
+    
+
         
         
-
-
-
+        
         
