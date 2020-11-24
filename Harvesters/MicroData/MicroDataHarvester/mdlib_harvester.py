@@ -59,74 +59,75 @@ def main():
     
     rr = requests.get(mdlib_url)
     
-    if rr.status_code == 200:
-        resp = rr.json()
-        
-        ### Check if there are more observations than limit defined. If yes, change the limit and read-in all datasets
-        
-        if resp['result']['total'] > limit :
-            limit = resp['result']['total']
-            mdlib_url = "{}://{}/index.php/api/catalog/search?format=json&ps={}".format(mdlib_params['protocol'], mdlib_params['host'], limit)    
-            new_rr = requests.get(mdlib_url)
+    assert (rr.status_code == 200, "API Error : {}".format(rr.text))
+    
+    resp = rr.json()
 
-            list_ids = get_mdlib_ids(new_rr)
+    ### Check if there are more observations than limit defined. If yes, change the limit and read-in all datasets
 
-        else:
-            list_ids = get_mdlib_ids(rr)
-            
-        
-        ##Loop through the IDs and check if ID_no exists
-        ddh_params = get_params("ddh2")
-        timezone_nw = pytz.timezone('America/New_York')
-        for ids in list_ids:
-            
-            ### this will return only public datasets on DDH currently. Work with ITS for new internal OU search endpoint
-            
-            req = requests.get("{}://{}/DDHSearch?qname=Dataset&qterm=*&$filter=reference_system/reference_id eq '{}'".format(ddh_params['protocol'], ddh_params['host'], ids))
+    if resp['result']['total'] > limit :
+        limit = resp['result']['total']
+        mdlib_url = "{}://{}/index.php/api/catalog/search?format=json&ps={}".format(mdlib_params['protocol'], mdlib_params['host'], limit)    
+        new_rr = requests.get(mdlib_url)
 
-            req_js = req.json()
+        list_ids = get_mdlib_ids(new_rr)
 
-            if len(req_js['Response']['value']) == 0: ##ID not on DDH
-                md_data = get_microdata(config(get_params("microdata", ids)))
-                harvest_mdlib(ids, md_data, token)
-            elif len(req_js['Response']['value']) == 1: ##ID on DDH. Check for update date
-                md_data = get_microdata(config(get_params("microdata", ids)))
-                md_date = md_data['dataset']['changed']
-                md_date = parse(md_date).astimezone(timezone_nw)
-
-            if 'LAST_UPDATED_DATE' in [i['type'] for i in req_js['Response']['value'][0]['identification']['dates']]:
-                res = next((sub for sub in req_js['Response']['value'][0]['identification']['dates'] if sub['type'] == 'LAST_UPDATED_DATE'), None) 
-                #ddh_date = dt.strptime(res['date'], "%m/%d/%Y %H:%M:%S %p")
-                ddh_date = parse(res['date']).astimezone(timezone_nw)
-            else:
-                ddh_date = None
-
-            #if len(req_js['Response']['value'][0]['identification']['dates'])>0:
-            #    for val in req_js['Response']['value'][0]['identification']['dates']:
-            #        if val['type'] == "LAST_UPDATED_DATE":
-            #            ddh_date = val['date']
-            #        else:
-            #            ddh_date = None
-            #else:
-            #    if 'LAST_UPDATED_DATE' in [i['type'] for i in req_js['Response']['value'][0]['identification']['dates']]:
-            #        res = next((sub for sub in req_js['Response']['value'][0]['identification']['dates'] if sub['type'] == 'LAST_UPDATED_DATE'), None) 
-            #        ddh_date = dt.strptime(res['date'], "%m/%d/%Y %H:%M:%S %p")
-            #    else:
-            #        ddh_date = None
-
-            try:
-                if md_date > ddh_date:
-                    harvest_mdlib(ids, md_data, token)
-                else:
-                    #sys.exit(99)
-                    #print("Condition fail 1")
-                    pass
-            except TypeError:
-                #sys.exit(99)
-                #print("Condition fail 2")
-                pass
     else:
-        raise ddh.APIError('get_microdata', mdlib_url, rr.text)
+        list_ids = get_mdlib_ids(rr)
+
+
+    ##Loop through the IDs and check if ID_no exists
+    ddh_params = get_params("ddh2")
+    timezone_nw = pytz.timezone('America/New_York')
+    for ids in list_ids:
+
+        ### this will return only public datasets on DDH currently. Work with ITS for new internal OU search endpoint
+
+        req = requests.get("{}://{}/DDHSearch?qname=Dataset&qterm=*&$filter=reference_system/reference_id eq '{}'".format(ddh_params['protocol'], ddh_params['host'], ids))
+
+        req_js = req.json()
+
+        if len(req_js['Response']['value']) == 0: ##ID not on DDH
+            md_data = get_microdata(config(get_params("microdata", ids)))
+            harvest_mdlib(ids, md_data, token)
+        elif len(req_js['Response']['value']) == 1: ##ID on DDH. Check for update date
+            md_data = get_microdata(config(get_params("microdata", ids)))
+            md_date = md_data['dataset']['changed']
+            md_date = parse(md_date).astimezone(timezone_nw)
+
+        if 'LAST_UPDATED_DATE' in [i['type'] for i in req_js['Response']['value'][0]['identification']['dates']]:
+            res = next((sub for sub in req_js['Response']['value'][0]['identification']['dates'] if sub['type'] == 'LAST_UPDATED_DATE'), None) 
+            #ddh_date = dt.strptime(res['date'], "%m/%d/%Y %H:%M:%S %p")
+            ddh_date = parse(res['date']).astimezone(timezone_nw)
+        else:
+            ddh_date = None
+
+        #if len(req_js['Response']['value'][0]['identification']['dates'])>0:
+        #    for val in req_js['Response']['value'][0]['identification']['dates']:
+        #        if val['type'] == "LAST_UPDATED_DATE":
+        #            ddh_date = val['date']
+        #        else:
+        #            ddh_date = None
+        #else:
+        #    if 'LAST_UPDATED_DATE' in [i['type'] for i in req_js['Response']['value'][0]['identification']['dates']]:
+        #        res = next((sub for sub in req_js['Response']['value'][0]['identification']['dates'] if sub['type'] == 'LAST_UPDATED_DATE'), None) 
+        #        ddh_date = dt.strptime(res['date'], "%m/%d/%Y %H:%M:%S %p")
+        #    else:
+        #        ddh_date = None
+
+        try:
+            if md_date > ddh_date:
+                harvest_mdlib(ids, md_data, token)
+            else:
+                #sys.exit(99)
+                #print("Condition fail 1")
+                pass
+        except TypeError:
+            #sys.exit(99)
+            #print("Condition fail 2")
+            pass
+    #else:
+    #    raise ddh.APIError('get_microdata', mdlib_url, rr.text)
         
         
         

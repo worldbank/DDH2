@@ -7,7 +7,10 @@
 ##      Add a function to add languages and ISO codes/coverage from country names
 ##      Check how current harvester addresses data classification  -->> DONE
 ##      Use controlled vocab endpoint wherever possible to avoid errors
-##      Add a function to add resource to published dataset (Rsource will be a link to dataset page on MDLib site) with a constant resource name
+##      Add a function to add resource to published dataset (Rsource will be a link to dataset page on MDLib site) with a constant resource name -->> DONE
+##      Granularity is a controlled vocab field
+##      Coverage under geograpgical coverage is a list
+##      Some dates in MDLib is YYYY-MM, convert them to YYYY-MM-DD
 
 import urllib
 import requests
@@ -297,3 +300,47 @@ def harvest_mdlib(ids, res, token):
     
     #else:
     #    print("Failed to add dataset!")
+    
+    
+def get_resource_json(dataset_id, idno):
+    file = pd.read_csv(os.path.join(os.getcwd(), "MDLib_data_classification.csv"))
+    temp = file[file.idno == idno].iloc[0]
+    
+    view_res = ddhs.post("dataset/view", {'data': { 'dataset_id' : "{}".format(dataset_id)}, 'showDatasetResources':'true'}).json()
+    
+    res_view_req = ddhs.post("resource/view", {'data': { 'resource_id' : "{}".format(view_res['resources'][0]['resource_id'])}}).json()
+    
+    resource = {
+          "id": "{}".format(dataset_id),
+          "name": "Related materials (Questionnaires, reports, tables,\n  technical documents, and data files)",
+          "unique_id": "{}".format(view_res['dataset_unique_id']),
+          "last_updated": "{}".format(view_res['last_Updated_Date']),
+          "dataset": {
+            "name": "{}".format(view_res['name'])
+          },
+          "identification": {
+            "name": "Related materials (Questionnaires, reports, tables,\n  technical documents, and data files)",
+            "type": "Landing page",
+            "status": "Active"
+          },
+          "constraints": {
+            "security": {
+              "data_classification_of_file": {
+                "name": "{}".format(view_res['constraints']['security']['classification'].upper())
+              },
+            },
+          },
+          "distribution": {
+            "format": "html",
+            "website_url": "{}".format(res_view_req['distribution']['website_url']),
+          },
+          "lineage": {
+            "source_reference": "{}".format(res_view_req['distribution']['website_url'])
+          }
+        }
+    
+    return resource
+
+def add_resource(res_js):
+    
+    resp = ddhs.post('resource/create', res_js)
