@@ -1,0 +1,7 @@
+[
+{"ddh_field": "license_id", "ddh_value": "CC0", "eex_field": "license_title","eex_value": "CC0 1.0"},
+{"ddh_field": "license_id", "ddh_value": "Creative Commons Attribution 4.0", "eex_field": "license_title","eex_value": "Creative Commons Attribution 4.0"},
+{"ddh_field": "license_id", "ddh_value": "Creative Commons Attribution-NonCommercial 4.0", "eex_field": "license_title","eex_value": "Creative Commons Attribution-NonCommercial 4.0"},
+{"ddh_field": "license_id", "ddh_value": "Creative Commons Attribution Share-Alike 4.0", "eex_field": "license_title","eex_value": "Creative Commons Attribution Share-Alike 4.0"},
+{"ddh_field": "license_id", "ddh_value": "Open Database License", "eex_field": "license_title","eex_value": "Open Data Commons Open Database License 1.0"}
+]
