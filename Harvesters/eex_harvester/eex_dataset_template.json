@@ -1,0 +1,60 @@
+{
+  "name": "",
+  "identification": {
+    "title": "",
+    "description": "",
+    "topics": [
+      {
+        "name": "Energy and Extractives"
+      }
+    ],
+    "practice": {
+      "code": "EAE",
+      "name": "Energy & Extractives"
+    },
+    "collection_id": [
+      "Energy Data Info",
+      "World Bank Energy Datasets"
+    ],
+    "point_of_contact": [
+      {
+        "name": "Tigran Parvanyan",
+        "role": "TEAMLEAD",
+        "email": "TParvanyan@worldbank.org",
+        "upi": "336592",
+        "is_emailaddress_visibility_externally": false
+      },
+      {
+        "name": "Hong Yang",
+        "role": "COLLABORATOR",
+        "upi": "511294",
+        "is_emailaddress_visibility_externally": false
+      }
+    ],
+    "dates": [
+    ],
+    "language_supported": [
+      {
+        "code": "EN",
+        "name": "English"
+      }
+    ]
+  },
+  "keywords": [
+    {
+      "name": "energydata.info"
+    }
+  ],
+  "constraints": {
+    "security": {
+      "classification": "Public"
+    },
+    "license": {
+    }
+  },
+  "lineage": {
+    "curation_harvest_source": "EnergyData.info",
+    "curation_harvest_system": ""
+  },
+  "last_Updated_Date": "2019-07-29T12:24:19"
+}
