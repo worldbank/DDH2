@@ -39,7 +39,27 @@ def get_mdlib_ids(response):
     #req = requests.get("https://ddhoutboundapiqa.asestg.worldbank.org/DDHSearch?qname=Dataset&qterm=*&$filter=reference_system/reference_id eq '{}'".format(idn))
     return lis  
         
+@lru_cache(maxsize=32)
+def get_control_vocab(token):
+    #sample_parameters = {
+    #   "resource": "https://ddhinboundapiqa.asestg.worldbank.org",
+    #   "tenant" : "31a2fec0-266b-4c67-b56e-2796d8f59c36",
+    #   "authorityHostUrl" : "https://login.microsoftonline.com",
+    #   "clientId" : "b5ea6885-2e6b-46f4-9569-d04b2e2b6a75",
+    #   "clientSecret" : "Pq660rD[3HjxY:jQAa:Kx-ArOLlhiB1k"
+    #}
+    #token = {"{}".format(token_key[0]) : "{}".format(token_value[0])}
+    url = "https://ddhinboundapiuat.asestg.worldbank.org/lookup/metadata"
+    #ddhs = ddh2.create_session(cache=True, params = sample_parameters)
+    con_res = requests.get(url, headers = token)
     
+    return con_res.json()  
+
+def write_file(data):
+    with open(r'harvested_json/harvest_{}.csv'.format(dt.now().strftime("%Y_%m_%d")), 'a', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(data)
+
 
 def main():
     global limit, token
@@ -52,6 +72,8 @@ def main():
     
     ddh = ddh2.create_session(cache=True, params = ddh2_params)
     token = ddh.headers
+    
+    control_vocab = get_control_vocab(token)
     
     limit = 10000
     mdlib_params = get_params("microdata")
@@ -78,56 +100,47 @@ def main():
 
     ##Loop through the IDs and check if ID_no exists
     ddh_params = get_params("ddh2")
+    df = pd.DataFrame(columns = ['dataset_id', 'unique_id', 'indo', 'status'])
+    df.to_csv('harvested_json/harvest_{}.csv'.format(dt.now().strftime("%Y_%m_%d")), index=False)
+    tokens = json.dumps(token)
     timezone_nw = pytz.timezone('America/New_York')
     for ids in list_ids:
-
-        ### this will return only public datasets on DDH currently. Work with ITS for new internal OU search endpoint
-
         req = requests.get("{}://{}/DDHSearch?qname=Dataset&qterm=*&$filter=reference_system/reference_id eq '{}'".format(ddh_params['protocol'], ddh_params['host'], ids))
 
         req_js = req.json()
 
         if len(req_js['Response']['value']) == 0: ##ID not on DDH
+            #print(config(get_params("microdata", ids)))
             md_data = get_microdata(config(get_params("microdata", ids)))
-            harvest_mdlib(ids, md_data, token)
+            stat = harvest_mdlib(ids, md_data, tokens, ddhs, True)
+            try:
+                stat_js = json.loads(stat)
+                write_file([stat_js['dataset_id'], stat_js['dataset_unique_id'], ids, 'new'])
+            except json.JSONDecodeError:
+                write_file([None, None, ids, stat])
         elif len(req_js['Response']['value']) == 1: ##ID on DDH. Check for update date
             md_data = get_microdata(config(get_params("microdata", ids)))
-            md_date = md_data['dataset']['changed']
-            md_date = parse(md_date).astimezone(timezone_nw)
+            if md_data['status'] == "suucess":
+                md_date = md_data['dataset']['changed']
+                md_date = parse(md_date).astimezone(timezone_nw)
 
-        if 'LAST_UPDATED_DATE' in [i['type'] for i in req_js['Response']['value'][0]['identification']['dates']]:
-            res = next((sub for sub in req_js['Response']['value'][0]['identification']['dates'] if sub['type'] == 'LAST_UPDATED_DATE'), None) 
-            #ddh_date = dt.strptime(res['date'], "%m/%d/%Y %H:%M:%S %p")
-            ddh_date = parse(res['date']).astimezone(timezone_nw)
-        else:
-            ddh_date = None
+                if 'LAST_UPDATED_DATE' in [i['type'] for i in req_js['Response']['value'][0]['identification']['dates']]:
+                    res = next((sub for sub in req_js['Response']['value'][0]['identification']['dates'] if sub['type'] == 'LAST_UPDATED_DATE'), None) 
+                    #ddh_date = dt.strptime(res['date'], "%m/%d/%Y %H:%M:%S %p")
+                    ddh_date = parse(res['date']).astimezone(timezone_nw)
+                else:
+                    ddh_date = None
 
-        #if len(req_js['Response']['value'][0]['identification']['dates'])>0:
-        #    for val in req_js['Response']['value'][0]['identification']['dates']:
-        #        if val['type'] == "LAST_UPDATED_DATE":
-        #            ddh_date = val['date']
-        #        else:
-        #            ddh_date = None
-        #else:
-        #    if 'LAST_UPDATED_DATE' in [i['type'] for i in req_js['Response']['value'][0]['identification']['dates']]:
-        #        res = next((sub for sub in req_js['Response']['value'][0]['identification']['dates'] if sub['type'] == 'LAST_UPDATED_DATE'), None) 
-        #        ddh_date = dt.strptime(res['date'], "%m/%d/%Y %H:%M:%S %p")
-        #    else:
-        #        ddh_date = None
-
-        try:
-            if md_date > ddh_date:
-                harvest_mdlib(ids, md_data, token)
-            else:
-                #sys.exit(99)
-                #print("Condition fail 1")
-                pass
-        except TypeError:
-            #sys.exit(99)
-            #print("Condition fail 2")
-            pass
-    #else:
-    #    raise ddh.APIError('get_microdata', mdlib_url, rr.text)
+                try:
+                    if md_date > ddh_date:
+                        stat = harvest_mdlib(ids, md_data, tokens, ddhs, False)
+                        try:
+                            stat_js = json.loads(stat)
+                            write_file([stat_js['dataset_id'], stat_js['dataset_unique_id'], ids, 'updated'])
+                        except json.JSONDecodeError:
+                            write_file([None, None, ids, stat])
+                except TypeError:
+                    pass
         
         
         

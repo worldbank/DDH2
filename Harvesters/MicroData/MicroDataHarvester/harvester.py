@@ -10,13 +10,19 @@
 ##      Granularity is a controlled vocab field -->> DONE
 ##      Coverage under geograpgical coverage is a list -->> DONE
 ##      Some dates in MDLib is YYYY-MM, convert them to YYYY-MM-DD -->> DONE
-##      Have license information?
+##      Add country name to datasets -->> DONE
+##      License classification ==> "data_na" > "Data not available", "public" > "Creative Commons Attribution 4.0", "remote" > "License specified externally", "direct" > "Research Data License" , "licensed" > "Reearch Data License", "open" >  "Creative Commons Attribution 4.0"
+
+##      Official Use datasets have "public" license on MDLib. Fix it
+##      Function to update dataset it it already exists but last modified date is different
+
+
 
 import urllib
 import requests
 import zipfile
 import ddh2
-from dateutil.parser import parse
+from dateutil.parser import parse, ParserError
 from msrestazure.azure_active_directory import AADTokenCredentials
 from utils import *
 from functools import lru_cache
@@ -32,9 +38,9 @@ import os, sys
 sys.path.append("../../../API/RomaniaHub/ddh2_testing")
 #from ddh2 import dataset
 import re
-sys.path.append("../../../API/pyddh")
-import ddh
-ddh.load('ddh1stg.prod.acquia-sites.com')
+#sys.path.append("../../../API/pyddh")
+#import ddh
+#ddh.load('ddh1stg.prod.acquia-sites.com')
 
 global funding_lis, notes_dict, stats_dict, study_dict
 
@@ -66,7 +72,7 @@ def assign_poc(mdlib_poc):
           'is_emailaddress_visibility_externally': 'false'}
 
         ds_poc['name'] = mdlib_poc['name']+', '+mdlib_poc['affiliation']
-        ds_poc['role'] = 'OWNER'
+        ds_poc['role'] = {"code" : "OWNER"}
         ds_poc['email'] = mdlib_poc['email']
         ds_poc['is_emailaddress_visibility_externally'] = "false"
 
@@ -101,6 +107,23 @@ def unpack_acks(vals):
         
     return ack_lis    
 
+def simplyfy_dates(temp):
+    try:
+        dd = dt.strptime(temp, "%Y").strftime('%Y-%m-%dT%H:%M:%S.%f')
+    except ValueError:
+        try:
+            dd = dt.strptime(temp, "%Y-%m").astimezone(timezone_nw).strftime('%Y-%m-%dT%H:%M:%S.%f')
+        except ValueError:
+            try:
+                dd = parse(temp).astimezone(timezone_nw).strftime('%Y-%m-%dT%H:%M:%S.%f')
+            except ParserError:
+                dd = ""
+        except OSError:
+            dd = parse(temp).strftime('%Y-%m-%dT%H:%M:%S.%f')
+    except OSError:
+        dd = parse(temp).strftime('%Y-%m-%dT%H:%M:%S.%f')
+        
+    return dd
 
 def get_dates(lis, val):
     timezone_nw = pytz.timezone('America/New_York')
@@ -114,14 +137,38 @@ def get_dates(lis, val):
         return [dtemp_ch, dtemp_cr]
     elif lis[-1] == "end_date":
         temp = extract_md_meta(val+[0, 'end'])
-        return parse(temp).replace(day=1).astimezone(timezone_nw).strftime('%Y-%m-%dT%H:%M:%S.%f')
+        dd = simplyfy_dates(temp)
+        return dd
     elif lis[-1] == "start_date":
         temp = extract_md_meta(val+[0, 'start'])
-        return parse(temp).replace(day=1).astimezone(timezone_nw).strftime('%Y-%m-%dT%H:%M:%S.%f')
+        dd = simplyfy_dates(temp)
+        return dd
     else:
         return ''
     
-    
+def get_license_info(classi, key):
+    if classi == "PUBLIC":
+        master_dic = {
+            "data_na" : "Data not available", 
+            "public" : "Creative Commons Attribution 4.0", 
+            "remote" : "License specified externally", 
+            "direct" : "Research Data License" , 
+            "licensed" : "Research Data License", 
+            "open" :  "Creative Commons Attribution 4.0"
+        }
+
+        return master_dic[key]
+    elif classi == "OFFICIAL_USE_ONLY":
+        master_dic = {
+            "data_na" : "Data not available", 
+            "public" : "Research Data License", 
+            "remote" : "License specified externally", 
+            "direct" : "Research Data License" , 
+            "licensed" : "Reearch Data License", 
+            "open" :  "Research Data License"
+        }
+
+        return master_dic[key]
     
 def get_funding_abr(vals):
     
@@ -132,25 +179,26 @@ def get_funding_abr(vals):
     return
 
 @lru_cache(maxsize=32)
-def get_control_vocab():
-    sample_parameters = {
-       "resource": "https://ddhinboundapiqa.asestg.worldbank.org",
-       "tenant" : "31a2fec0-266b-4c67-b56e-2796d8f59c36",
-       "authorityHostUrl" : "https://login.microsoftonline.com",
-       "clientId" : "b5ea6885-2e6b-46f4-9569-d04b2e2b6a75",
-       "clientSecret" : "Pq660rD[3HjxY:jQAa:Kx-ArOLlhiB1k"
-    }
+def get_control_vocab(tokens):
+    #sample_parameters = {
+    #   "resource": "https://ddhinboundapiqa.asestg.worldbank.org",
+    #   "tenant" : "31a2fec0-266b-4c67-b56e-2796d8f59c36",
+    #   "authorityHostUrl" : "https://login.microsoftonline.com",
+    #   "clientId" : "b5ea6885-2e6b-46f4-9569-d04b2e2b6a75",
+    #   "clientSecret" : "Pq660rD[3HjxY:jQAa:Kx-ArOLlhiB1k"
+    #}
+    token = json.loads(tokens)
     url = "https://ddhinboundapiuat.asestg.worldbank.org/lookup/metadata"
-    ddhs = ddh2.create_session(cache=True, params = sample_parameters)
-    con_res = requests.get(url, headers = ddhs.get_headers())
+    #ddhs = ddh2.create_session(cache=True, params = sample_parameters)
+    con_res = requests.get(url, headers = token)
     
     return con_res.json()
 
 
-def simplify_granularity(vals):
+def simplify_granularity(vals, tokens):
     temp = extract_md_meta(vals)
     temp_ = temp.upper()
-    con_res = get_control_vocab()
+    con_res = get_control_vocab(tokens)
     gran_lis = []
     for i in con_res['granularities']:
         gran_lis.append(i['code'])
@@ -166,21 +214,34 @@ def simplify_granularity(vals):
         return ', '.join(temp_lis)
 
     
-def get_geo_coverage(vals):
+def get_geo_coverage(vals, tokens):
     cov_lis = []
-    string = extract_md_meta(vals)[0]['name']
-    con_res = get_control_vocab()
+    string = extract_md_meta(vals)[0]['abbreviation']
+    rr = requests.get("http://api.worldbank.org/v2/country/{}?format=json".format(string))
     try:
-        for i in con_res['countries']:
-            if string in i['name']:
-                cov_lis.append({"code" : i['code']})
-    except KeyError:
-        pass
-    except TypeError:
-        print(string)
+        if rr.status_code == 200:
+            cov_lis.append({"code" : rr.json()[1][0]['iso2Code']})  
+    except IndexError:
+        con_res = get_control_vocab(tokens)
+        try:
+            for i in con_res['countries']:
+                if string in i['name']:
+                    cov_lis.append({"code" : i['code']})
+        except KeyError:
+            pass
+        except TypeError:
+            print(string)
     return cov_lis
     
-    
+
+def get_country_name(vals):
+    country = ''
+    string = extract_md_meta(vals)[0]['abbreviation']
+    rr = requests.get("http://api.worldbank.org/v2/country/{}?format=jsonhttp://api.worldbank.org/v2/country/{}?format=json".format(string))
+    if rr.status_code == 200:
+        country = rr.json()[1][0]['name']  
+    return country
+
 def get_list_vals(val):
     if isinstance(val, list):
         val = val[0]
@@ -230,86 +291,76 @@ def extract_md_meta(md_lis):
             temp = response[md_lis[0]][md_lis[1]][md_lis[2]][md_lis[3]][md_lis[4]][md_lis[5]][md_lis[6]][md_lis[7]]
     except KeyError:
         temp = ""
+    except TypeError:
+        temp = ""
     
     return temp
 
 
-def extract_ds_vals(ds, lis, val, token):
+def extract_ds_vals(ds, lis, val, tokens):
+
+    md_meta = extract_md_meta(val)
     
-    #cols = ["data_notes", "statistical_concept_and_methodology", "study_type"]
-    
-    if lis[-1] == "point_of_contact":
-        temp = assign_poc(extract_md_meta(val))
-        if temp == 'NULL':
-            val = ['dataset','metadata','doc_desc','producers']
+    if md_meta != "":
+        if lis[-1] == "point_of_contact":
             temp = assign_poc(extract_md_meta(val))
-        return [temp]
-    #elif lis[-1] in cols:
-    elif lis[-1] == "data_collectors":
-        #str_to_dict(lis[-1], val[-1],  extract_md_meta(val)[0]['name'])
-        #temp = ds[lis[0]][lis[1]][lis[2]] + '\n ' +': '.join([val[-1], str(extract_md_meta(val)[0]['name'])])
-        temp = "{} <br> {}".format(ds[lis[0]][lis[1]][lis[2]], ': '.join([val[-1].upper(), str(extract_md_meta(val)[0]['name'])]))
-        #temp = dcoll_lis
-        return temp
-    elif lis[-1] == "data_notes":
-        #str_to_dict(lis[-1], val[-1],  extract_md_meta(val))
-        #temp = str(ds[lis[0]][lis[1]][lis[2]]) + '\n ' +': '.join([val[-1], str(extract_md_meta(val))])
-        temp = "{} <br> {}".format(ds[lis[0]][lis[1]][lis[2]], ': '.join([val[-1].upper(), str(extract_md_meta(val))]))
-        temp = notes_lis
-        return temp
-    elif lis[-1] == "statistical_concept_and_methodology":
-        #str_to_dict(lis[-1], val[-1],  extract_md_meta(val))
-        #temp = ds[lis[0]][lis[1]][lis[2]] + '\n ' +': '.join([val[-1], str(extract_md_meta(val))])
-        temp = "{} <br> {}".format(ds[lis[0]][lis[1]][lis[2]], ': '.join([val[-1].upper(), str(extract_md_meta(val))]))
-        #temp = stats_lis
-        return temp
-    elif lis[-1] == "study_type":
-        #temp = ds[lis[0]][lis[1]][lis[2]] + '\n ' +': '.join([val[-1], str(extract_md_meta(val))])
-        #str_to_dict(lis[-1], val[-1],  extract_md_meta(val))
-        #temp = study_lis
-        temp = temp = "{} <br> {}".format(ds[lis[0]][lis[1]][lis[2]], ': '.join([val[-1].upper(), str(extract_md_meta(val))]))
-        return temp
-    #else:
-    #    temp = ds[lis[0]][lis[1]][lis[2]] + '\n ' +': '.join(["{}".format(val[-1]), extract_md_meta(val)])
-    elif lis[-1] == "description" and lis[-2] == 'lineage':
-        #str_to_dict(lis[-1], val[-1],  extract_md_meta(val))
-        #temp = study_lis
-        #temp = ds[lis[0]][lis[1]][lis[2]] + ': '.join(["{}".format(val[-1]), extract_md_meta(val)])
-        temp = "{} <br> {}".format(ds[lis[0]][lis[1]][lis[2]], ': '.join([val[-1].upper(), str(extract_md_meta(val))]))
-        return temp       
-    elif lis[-1] == "funding_name_abbreviation_role":
-        get_funding_abr(extract_md_meta(val))
-        temp = funding_lis
-        return temp
-    elif lis[-1] in ['end_date', 'start_date', 'dates']:
-        temp = get_dates(lis, val)
-        return temp
-    elif lis[-1] == 'keywords':
-        temp = get_keywords(extract_md_meta(val))
-        return temp
-    elif lis[-1] in ['coverage']:
-        temp = get_geo_coverage(val)
-        return temp
-    elif lis[-1] == "useConstraints":
-        try:
-            temp = extract_md_meta(val)[0]['txt']
+            if temp == 'NULL':
+                val = ['dataset','metadata','doc_desc','producers']
+                temp = assign_poc(extract_md_meta(val))
+            return [temp]
+        elif (lis[-1] == "statistical_concept_and_methodology") and (val[-1] == "data_collectors"):
+            temp = "{}: <br> {}".format(ds[lis[0]][lis[1]][lis[2]], ': '.join([val[-1].upper(), str(extract_md_meta(val)[0]['name'])]))
             return temp
-        except (ValueError, IndexError) as e:
-            pass
-    elif lis[-1] == "other_acknowledgements":
-        temp = unpack_acks(val)
-        return temp
-    elif lis[-1] == 'granularity':
-        temp = simplify_granularity(val)
-        return temp
+        elif lis[-1] == "data_notes":
+            temp = "{}: <br> {}".format(ds[lis[0]][lis[1]][lis[2]], ': '.join([val[-1].upper(), str(extract_md_meta(val))]))
+            temp = notes_lis
+            return temp
+        elif lis[-1] == "statistical_concept_and_methodology":
+            temp = "{}: <br> {}".format(ds[lis[0]][lis[1]][lis[2]], ': '.join([val[-1].upper(), str(extract_md_meta(val))]))
+            return temp
+        elif lis[-1] == "study_type":
+            temp = temp = "{}: <br> {}".format(ds[lis[0]][lis[1]][lis[2]], ': '.join([val[-1].upper(), str(extract_md_meta(val))]))
+            return temp
+        elif lis[-1] == "description" and lis[-2] == 'lineage':
+            temp = "{}: <br> {}".format(ds[lis[0]][lis[1]][lis[2]], ': '.join([val[-1].upper(), str(extract_md_meta(val))]))
+            return temp       
+        elif lis[-1] == "funding_name_abbreviation_role":
+            get_funding_abr(extract_md_meta(val))
+            temp = funding_lis
+            return temp
+        elif lis[-1] in ['end_date', 'start_date', 'dates']:
+            temp = get_dates(lis, val)
+            return temp
+        elif lis[-1] == 'keywords':
+            temp = get_keywords(extract_md_meta(val))
+            return temp
+        elif lis[-1] in ['coverage']:
+            temp = get_geo_coverage(val, tokens)
+            return temp
+        elif lis[-1] == "useConstraints":
+            try:
+                temp = extract_md_meta(val)[0]['txt']
+                return temp
+            except (ValueError, IndexError) as e:
+                pass
+        elif lis[-1] == "other_acknowledgements":
+            temp = unpack_acks(val)
+            return temp
+        elif lis[-1] == 'granularity':
+            temp = simplify_granularity(val, tokens)
+            return temp
+        else:
+            temp = extract_md_meta(val)
+            return temp
     else:
-        temp = extract_md_meta(val)
-        return temp
+        return ""
+
+
 
     
 def get_static_info(ds):
     ###curation harvest source
-    ds['Dataset']['lineage']['curation_harvest_source'] = "MicroData Library"
+    ds['Dataset']['lineage']['curation_harvest_source'] = "MICRODATA"
     
     ### language supported
     ds['Dataset']['identification']['language_supported'] = ["EN"]
@@ -323,28 +374,42 @@ def get_static_info(ds):
     return ds
     
     
-def add_to_ddh(ds, token):
+# https://ddhinboundapiuat.asestg.worldbank.org/dataset/create     
+def add_to_ddh(ids, ds, tokens, ddh_sess):
     ddh_params = get_params("ddh2")
-    req = requests.post("{}://{}/dataset/create".format(ddh_params['protocol'], ddh_params['host']),
-                   json = ds, headers = token)
+    token = json.loads(tokens)
+    req = ddh_sess.post("dataset/create", ds)
+    #req = requests.post("https://ddhinboundapiuat.asestg.worldbank.org/dataset/create",
+    #               json = ds, headers = token)
     
     if req.status_code == 417:
         print("Error: {}".format(req.text))
     elif req.status_code == 200:
-        print("Dataset Added! {}".format(req.text))
+        print("Dataset Created! {}".format(req.text))
+        try:
+            stat = json.loads(req.text)
+            res = get_resource_json(stat['dataset_id'], ids, tokens, ddh_sess)
+            resp = add_resource(res, stat['dataset_id'], ddh_sess)
+            
+            if resp == "Success":
+                return req.text
+        except json.JSONDecodeError:
+            print(ids, req.text)
+            return req.text
+    else:
+        print(ids,'else', req.text)
 
-        
-def _add_to_ddh(ids, ds):
-    with open("{}_MDLib.json".format(ids), 'w') as f:
-        json.dump(ds, f, indent = 6) 
-
-        
-def harvest_mdlib(ids, res, token):
-    global response, funding_lis, notes_lis, stats_lis, study_lis, dcoll_lis, desc_lis, ds
-    response = res
-    token = token
-    map_file = pd.read_excel(r"C:\Users\wb542830\OneDrive - WBG\DEC\DDH\DDH2.0\Harvesters\MicroData\MDLib_DDH2_mapping.xlsx", sheet_name=1)
     
+def update_existing(ddh_sess):
+    return
+ 
+    
+    
+def harvest_mdlib(ids, res, tokens, ddh_sess, add_new):
+    global response, funding_lis, notes_lis, stats_lis, study_lis, dcoll_lis, desc_lis, ds, timezone_nw
+    response = res
+    map_file = pd.read_excel(r"C:\Users\wb542830\OneDrive - WBG\DEC\DDH\DDH2.0\Harvesters\MicroData\MDLib_DDH2_mapping.xlsx", sheet_name=1)
+    timezone_nw = pytz.timezone('America/New_York')
     funding_lis, notes_lis, stats_lis, study_lis, dcoll_lis, desc_lis = [], [], [], [], [], []
     
     ds = new_ds()
@@ -357,11 +422,11 @@ def harvest_mdlib(ids, res, token):
             #else:
             try:
                 if len(lis) == 2:
-                    ds[lis[0]][lis[1]] = extract_ds_vals(ds, lis, val, token)
+                    ds[lis[0]][lis[1]] = extract_ds_vals(ds, lis, val, tokens)
                 elif len(lis) == 3:
-                    ds[lis[0]][lis[1]][lis[2]] = extract_ds_vals(ds, lis, val, token)
+                    ds[lis[0]][lis[1]][lis[2]] = extract_ds_vals(ds, lis, val, tokens)
                 elif len(lis) == 4 :
-                    ds[lis[0]][lis[1]][lis[2]][lis[3]] = extract_ds_vals(ds, lis, val, token)
+                    ds[lis[0]][lis[1]][lis[2]][lis[3]] = extract_ds_vals(ds, lis, val, tokens)
                 
             except KeyError:
                 pass
@@ -380,27 +445,46 @@ def harvest_mdlib(ids, res, token):
                 pass
         #except TypeError as e:
         #    print(i, '::', e)
+    country = extract_md_meta(['dataset','metadata', 'study_desc', 'study_info', 'nation'])[0]['name']
+    ds['Dataset']['identification']['title'] = "{} - {}".format(country, ds['Dataset']['identification']['title'])
     
-    ds = clean_empty(ds)
+    ds['Dataset']['constraints']['license']['license_id'] = get_license_info(ds['Dataset']['constraints']['security']['classification'], extract_md_meta(['dataset', 'data_access_type']))
+    
     ds = get_static_info(ds)
-    with open("{}_MDLib.json".format(ids), 'w') as f:
+    ds = clean_empty(ds)
+    
+    #add_to_ddh(ids, ds, tokens)
+    
+    with open("harvested_json/{}_MDLib.json".format(ids), 'w') as f:
         json.dump(ds, f, indent = 6)
+        
+    if add_new:
+        stat = add_to_ddh(ids, ds, tokens, ddh_sess)
+        return stat
+        #try:
+        #    stat_id = json.loads(stat)
+        #except json.JSONDecodeError:
+        #    print(ids, stat)
+    else:
+        stat = update_existing(ddh_sess)
+        return stat
+
 
     
     
-def get_resource_json(dataset_id, idno):
+def get_resource_json(dataset_id, idno, tokens, ddh_sess):
     file = pd.read_csv(os.path.join(os.getcwd(), "MDLib_data_classification.csv"))
     temp = file[file.idno == idno].iloc[0]
-    sample_parameters = {
-       "resource": "https://ddhinboundapiqa.asestg.worldbank.org",
-       "tenant" : "31a2fec0-266b-4c67-b56e-2796d8f59c36",
-       "authorityHostUrl" : "https://login.microsoftonline.com",
-       "clientId" : "b5ea6885-2e6b-46f4-9569-d04b2e2b6a75",
-       "clientSecret" : "Pq660rD[3HjxY:jQAa:Kx-ArOLlhiB1k"
-    }
-    ddhs = ddh2.create_session(cache=True, params = sample_parameters)
+    #sample_parameters = {
+    #   "resource": "https://ddhinboundapiqa.asestg.worldbank.org",
+    #   "tenant" : "31a2fec0-266b-4c67-b56e-2796d8f59c36",
+    #   "authorityHostUrl" : "https://login.microsoftonline.com",
+    #   "clientId" : "b5ea6885-2e6b-46f4-9569-d04b2e2b6a75",
+    #   "clientSecret" : "Pq660rD[3HjxY:jQAa:Kx-ArOLlhiB1k"
+    #}
+    #ddhs = ddh2.create_session(cache=True, params = sample_parameters)
     
-    view_res = ddhs.post("dataset/view", {'data': { 'dataset_id' : "{}".format(dataset_id)}, 'showDatasetResources':'true'}).json()
+    view_res = ddh_sess.post("dataset/view", {'data': { 'dataset_id' : "{}".format(dataset_id)}, 'showDatasetResources':'true'}).json()
     
     #if view_res['constraints']['security']['classification'].upper() == "PUBLIC":
     #    ##should be source_reference ideally
@@ -443,14 +527,16 @@ def get_resource_json(dataset_id, idno):
     
     return resource
 
-def add_resource(res_js, dataset_id):
+def add_resource(res_js, dataset_id, ddh_sess):
     
-    resp = ddhs.post('resource/create', res_js)
+    resp = ddh_sess.post('resource/create', res_js)
     
-    req_pub = ddhs.post("workflow/updatestatus", {"dataset_id" : "{}".format(dataset_id),
+    req_pub = ddh_sess.post("workflow/updatestatus", {"dataset_id" : "{}".format(dataset_id),
                                                        "dataset_status" : "PUBLISHED",
                                                "publish_label" : "resource add1"})
     if req_pub.text.startswith('Ent'):
         print("Resource added and updated!")
+        return "Success"
     else:
         print("Error creating resource: {}".format(req_pub.text))
+        return

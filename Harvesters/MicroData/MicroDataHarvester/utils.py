@@ -19,14 +19,14 @@ import ddh
 def get_params(host_type, idno=None):
     if host_type == "microdata":
         config_params = {
-            'protocol' : 'https',
+            'protocol' : 'http',
             'host' : 'microdatalib.worldbank.org',
             'data_id' : "{}".format(idno)
             }
         return config_params
     if host_type == "microdata_pub":
         config_params = {
-            'protocol' : 'https',
+            'protocol' : 'http',
             'host' : 'microdata.worldbank.org',
             'data_id' : "{}".format(idno)
             }
@@ -55,6 +55,16 @@ def config(params):
     
     return url
 
+def retry_get_microdata(url):
+    response = requests.get(url)
+    try:
+        result = response.json()
+        if not isinstance(result, dict):
+            return None
+        return result
+    except json.JSONDecodeError:
+        print(url, response.text)
+        
 def get_microdata(url):
     sleep(2)
     url = str(url)
@@ -64,8 +74,8 @@ def get_microdata(url):
         if not isinstance(result, dict):
             return None
         return result
-    except:
-        print(url, response.text)
+    except json.JSONDecodeError:
+        retry_get_microdata(url)
 
 #@lru_cache(maxsize=32)
 def get_ou_class(token = None):
@@ -131,6 +141,7 @@ def get_data_classfication():
     
     for i in temp_df.index:
         ou_df.loc[i, 'classification'] = "PUBLIC"
+        ou_df.loc[i, 'exception'] = None
         
     notin_pub = pub_df[~pub_df.idno.isin(ou_df.idno)]
     
