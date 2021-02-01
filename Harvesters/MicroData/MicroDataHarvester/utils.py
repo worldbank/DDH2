@@ -11,8 +11,8 @@ import json
 from time import sleep
 import os, sys
 import re
-sys.path.append("../../../API/pyddh")
-import ddh
+#sys.path.append("../../../API/pyddh")
+#import ddh
 
 #global ddh_host, ddh_session_key, ddh_session_value, ddh_token, ddh_protocol
 
@@ -31,10 +31,22 @@ def get_params(host_type, idno=None):
             'data_id' : "{}".format(idno)
             }
         return config_params
-    elif host_type == "ddh2":
+    elif host_type == "ddh2qa":
         config_params = {
             'protocol' : 'https',
-            'host' : 'ddhoutboundapiqa.asestg.worldbank.org'
+            'host' : 'ddhinboundapiqa.asestg.worldbank.org'
+            }
+        return config_params
+    elif host_type == "ddh2uat":
+        config_params = {
+            'protocol' : 'https',
+            'host' : 'ddhinboundapiuat.asestg.worldbank.org'
+            }
+        return config_params
+    elif host_type == "ddh2prd":
+        config_params = {
+            'protocol' : 'https',
+            'host' : 'ddhinboundapi.ase.worldbank.org'
             }
         return config_params
     
@@ -66,7 +78,7 @@ def retry_get_microdata(url):
         print(url, response.text)
         
 def get_microdata(url):
-    sleep(2)
+    sleep(4)
     url = str(url)
     response = requests.get(url)
     try:

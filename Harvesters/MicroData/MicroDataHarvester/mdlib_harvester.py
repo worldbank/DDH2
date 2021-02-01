@@ -12,6 +12,7 @@ import pandas as pd
 import json
 import os, sys
 import re
+sys.path.append(r"C:\Users\wb542830\OneDrive - WBG\DEC\DDH\DDH2.0\ddh2api")
 import ddh2
 
 ## Function that reads in all microdata and checks it against current DDH entry
@@ -99,18 +100,20 @@ def main():
 
 
     ##Loop through the IDs and check if ID_no exists
-    ddh_params = get_params("ddh2")
+    ddh_params = get_params("ddh2uat")
     df = pd.DataFrame(columns = ['dataset_id', 'unique_id', 'indo', 'status'])
     df.to_csv('harvested_json/harvest_{}.csv'.format(dt.now().strftime("%Y_%m_%d")), index=False)
     tokens = json.dumps(token)
     timezone_nw = pytz.timezone('America/New_York')
     for ids in list_ids:
-        req = requests.get("{}://{}/DDHSearch?qname=Dataset&qterm=*&$filter=reference_system/reference_id eq '{}'".format(ddh_params['protocol'], ddh_params['host'], ids))
-
+        url = "{}://{}/search?q=*&$status eq 'PUBLISHED' &$filter=lineage/source_reference eq '{}'".format(ddh_params['protocol'], ddh_params['host'], ids)
+        req = requests.get(url, ddhs.headers)
         req_js = req.json()
 
+        print(ids, len(req_js['Response']['value']))
         if len(req_js['Response']['value']) == 0: ##ID not on DDH
             #print(config(get_params("microdata", ids)))
+
             md_data = get_microdata(config(get_params("microdata", ids)))
             stat = harvest_mdlib(ids, md_data, tokens, ddhs, True)
             try:
@@ -118,22 +121,26 @@ def main():
                 write_file([stat_js['dataset_id'], stat_js['dataset_unique_id'], ids, 'new'])
             except json.JSONDecodeError:
                 write_file([None, None, ids, stat])
+            except TypeError as e:
+                print(e)
         elif len(req_js['Response']['value']) == 1: ##ID on DDH. Check for update date
             md_data = get_microdata(config(get_params("microdata", ids)))
             if md_data['status'] == "suucess":
                 md_date = md_data['dataset']['changed']
-                md_date = parse(md_date).astimezone(timezone_nw)
+                md_date = parse(md_date).astimezone(timezone_nw).strftime('%Y-%m-%dT%H:%M:%S.%f')
 
-                if 'LAST_UPDATED_DATE' in [i['type'] for i in req_js['Response']['value'][0]['identification']['dates']]:
-                    res = next((sub for sub in req_js['Response']['value'][0]['identification']['dates'] if sub['type'] == 'LAST_UPDATED_DATE'), None) 
-                    #ddh_date = dt.strptime(res['date'], "%m/%d/%Y %H:%M:%S %p")
-                    ddh_date = parse(res['date']).astimezone(timezone_nw)
-                else:
-                    ddh_date = None
+                #if 'LAST_UPDATED_DATE' in [i['type'] for i in req_js['Response']['value'][0]['identification']['dates']]:
+                #    res = next((sub for sub in req_js['Response']['value'][0]['identification']['dates'] if sub['type'] == 'LAST_UPDATED_DATE'), None) 
+                #   #ddh_date = dt.strptime(res['date'], "%m/%d/%Y %H:%M:%S %p")
+                #    ddh_date = parse(res['date']).astimezone(timezone_nw)
+                #else:
+                #    ddh_date = None
+
+                ddh_date = req_js['Response']['value'][0]['last_updated_date']
 
                 try:
                     if md_date > ddh_date:
-                        stat = harvest_mdlib(ids, md_data, tokens, ddhs, False)
+                        stat = harvest_mdlib(ids, md_data, tokens, ddhs, False, req_js['Response']['value'][0]['dataset_id'])
                         try:
                             stat_js = json.loads(stat)
                             write_file([stat_js['dataset_id'], stat_js['dataset_unique_id'], ids, 'updated'])
@@ -141,6 +148,8 @@ def main():
                             write_file([None, None, ids, stat])
                 except TypeError:
                     pass
+        else:
+            write_file([None, None, ids, 'Unknown exception'])
         
         
         
